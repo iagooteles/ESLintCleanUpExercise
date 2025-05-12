@@ -1,0 +1,12 @@
+{
+  "name": "ambientes_des_software_03",
+  "version": "1.0.0",
+  "description": "Este é um projeto de prova prática para praticar refatoração de código com base nos princípios do livro \"Clean Code\" de Robert C. Martin.",
+  "main": "swapi.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
