@@ -4,7 +4,7 @@ Este é um projeto de prova prática para praticar refatoração de código com 
 
 ## Sobre o trabalho
 
-O arquivo `swapi.js` contém um código JavaScript funcional que faz requisições HTTP para a API de Star Wars (SWAPI) e exibe os resultados. O código funciona, mas intencionalmente viola vários princípios de código limpo.
+O arquivo `index.js` contém um código JavaScript funcional que faz requisições HTTP para a API de Star Wars (SWAPI) e exibe os resultados. O código funciona, mas intencionalmente viola vários princípios de código limpo.
 
 ## Princípios de Clean Code violados
 
