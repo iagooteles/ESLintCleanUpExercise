@@ -53,3 +53,6 @@ Para cada problema de linting encontrado, será descontado 0,1 décimos (ou seja
 
 O trabalho pode ser feito em equipe de até 4 pessoas e deve ser enviado para o GitHub.
 O link do repositório deve ser enviado no AVA até 26/05/2025.
+
+OBS: Prof, a rota da api de veiculos não está funcionando `vehicles/${lastId}`.. Mesmo no arquivo swapi.js sem modificações
+Não consigo acessar a documentação...

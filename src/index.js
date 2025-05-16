@@ -6,166 +6,228 @@ const https = require("https");
 
 const cache = {};
 let isDebugMode = true;
-let timeout = 5000;
 let errCount = 0;
 const statusCodeOK = 200;
-const errorStatusCode = 400;
+let timeout = 5000;
 
-// Trocar o x por 'requestUrl'??
-// r por 'resolve'
-// j por 'reject'
 async function fetchData(requestUrl) {
+    const cachedData = getDataFromCache(requestUrl);
+    if (cachedData) return cachedData;
+
+    return await doHttpRequest(requestUrl);
+}
+
+function getDataFromCache(requestUrl) {
     if (cache[requestUrl]) {
         if (isDebugMode) console.log("Using cached data for", requestUrl);
         return cache[requestUrl];
     }
-    
+    return null;
+}
+
+function doHttpRequest(requestUrl) {
     return new Promise((resolve, reject) => {
         let data = "";
+
         const req = https.get(`https://swapi.dev/api/${requestUrl}`, { rejectUnauthorized: false }, (res) => {
-            if (res.statusCode >= errorStatusCode) {
-                errCount++;
-                return reject(new Error(`Request failed with status code ${res.statusCode}`));
+            if (!handleFailedResponse(res.statusCode, reject)) {
+                return;
             }
             
-            res.on("data", (chunk) => { data += chunk; });
+            res.on("data", (chunk) => {data += chunk;});
+
             res.on("end", () => {
-                try {
-                    const parsedData = JSON.parse(data);
-                    cache[requestUrl] = parsedData; // Cache the result
-                    resolve(parsedData);
-                    if (isDebugMode) {
-                        console.log(`Successfully fetched data for ${requestUrl}`);
-                        console.log(`Cache size: ${Object.keys(cache).length}`);
-                    }
-                } catch (error) {
-                    errCount++;
-                    reject(error);
-                }
+                handleSuccessResponse(data, requestUrl, resolve, reject);
             });
-        }).on("error", (error) => {
-            errCount++;
-            reject(error);
         });
-        
-        req.setTimeout(timeout, () => {
-            req.abort();
-            errCount++;
-            reject(new Error(`Request timeout for ${requestUrl}`));
-        });
+
+        handleRequestErrors(req, requestUrl, reject);
+    });
+}
+
+function handleFailedResponse(statusCode, reject) {
+    const BAD_STATUS_CODE = 400;
+    if (statusCode >= BAD_STATUS_CODE) {
+        errCount++;
+        reject(new Error(`Request failed with status code ${statusCode}`));
+        return false;
+    }
+    return true;
+}
+
+function handleSuccessResponse(data, requestUrl, resolve, reject) {
+    try {
+        const parsedData = JSON.parse(data);
+        cache[requestUrl] = parsedData;
+        resolve(parsedData);
+
+        if (isDebugMode) {
+            console.log(`Successfully fetched data for ${requestUrl}`);
+            console.log(`Cache size: ${Object.keys(cache).length}`);
+        }
+    } catch (error) {
+        errCount++;
+        reject(error);
+    }
+}
+
+function handleRequestErrors(req, requestUrl, reject) {
+    req.on("error", (error) => {
+        errCount++;
+        reject(error);
+    });
+
+    req.setTimeout(timeout, () => {
+        req.abort();
+        errCount++;
+        reject(new Error(`Request timeout for ${requestUrl}`));
     });
 }
 
 // Global variables for tracking state
-let lastId = 1;
+const lastId = 1;
 let fetchCount = 0;
-let totalSize = 0;
+let totalDataSize = 0;
 
-async function p() {
+async function displayData() {
     try {
         if (isDebugMode) console.log("Starting data fetch...");
         fetchCount++;
-        
-        const character = await fetchData(`people/${lastId}`);
-        totalSize += JSON.stringify(character).length;
-        console.log("Character:", character.name);
-        console.log("Height:", character.height);
-        console.log("Mass:", character.mass);
-        console.log("Birthday:", character.birth_year);
-        if (character.films && character.films.length > 0) {
-            console.log("Appears in", character.films.length, "films");
-        }
-        
-        const starships = await fetchData("starships/?page=1");
-        totalSize += JSON.stringify(starships).length;
-        console.log("\nTotal Starships:", starships.count);
-        
-        // Print first 3 starships with details
-        const maxStarshipsToDisplay = 3;
-        for (let i = 0; i < maxStarshipsToDisplay; i++) {
-            if (i < starships.results.length) {
-                const starship = starships.results[i];
-                console.log(`\nStarship ${i+1}:`);
-                console.log("Name:", starship.name);
-                console.log("Model:", starship.model);
-                console.log("Manufacturer:", starship.manufacturer);
-                // console.log("Cost:", starship.cost_in_credits !== "unknown" ? starship.cost_in_credits + " credits" : "unknown");
-                console.log(`Cost: ${starship.cost_in_credits !== "unknown" ? `${starship.cost_in_credits} credits` : "unknown"}`);
-                console.log("Speed:", starship.max_atmosphering_speed);
-                console.log("Hyperdrive Rating:", starship.hyperdrive_rating);
-                if (starship.pilots && starship.pilots.length > 0) {
-                    console.log("Pilots:", starship.pilots.length);
-                }
-            }
-        }
-        
-        // Find planets with population > 1000000000 and diameter > 10000
-        const planets = await fetchData("planets/?page=1");
-        totalSize += JSON.stringify(planets).length;
-        console.log("\nLarge populated planets:");
-        for (let i = 0; i < planets.results.length; i++) {
-            const planet = planets.results[i];
-            const minPopulation = 1000000000;
-            const minDiameter = 10000;
 
-            if (planet.population !== "unknown" && parseInt(planet.population) > minPopulation && 
-                planet.diameter !== "unknown" && parseInt(planet.diameter) > minDiameter) {
-                console.log(planet.name, "- Pop:", planet.population, "- Diameter:", planet.diameter, "- Climate:", planet.climate);
-                // Check if it appears in any films
-                if (planet.films && planet.films.length > 0) {
-                    console.log(`  Appears in ${planet.films.length} films`);
-                }
-            }
-        }
-        
-        // Get films and sort by release date, then print details
-        const films = await fetchData("films/");
-        totalSize += JSON.stringify(films).length;
-        const filmList = films.results;
-        // TODO: esse sort?
-        filmList.sort((a, b) => {
-            return new Date(a.release_date) - new Date(b.release_date);
-        });
-        
-        console.log("\nStar Wars Films in chronological order:");
-        for (let i = 0; i < filmList.length; i++) {
-            const film = filmList[i];
-            console.log(`${i+1}. ${film.title} (${film.release_date})`);
-            console.log(`Director: ${film.director}`);
-            console.log(`Producer: ${film.producer}`);
-            console.log(`Characters: ${film.characters.length}`);
-            console.log(`Planets: ${film.planets.length}`);
-        }
-        
-        // Get a vehicle and display details
-        if (lastId <= 4) {
-            const vehicle = await fetchData(`vehicles/${lastId}`);
-            totalSize += JSON.stringify(vehicle).length;
-            console.log("\nFeatured Vehicle:");
-            console.log("Name:", vehicle.name);
-            console.log("Model:", vehicle.model);
-            console.log("Manufacturer:", vehicle.manufacturer);
-            console.log("Cost:", vehicle.cost_in_credits, "credits");
-            console.log("Length:", vehicle.length);
-            console.log("Crew Required:", vehicle.crew);
-            console.log("Passengers:", vehicle.passengers);
-            lastId++;  // Increment for next call
-        }
-        
+        await displayCharacterData();
+        await displayStarshipsData();
+        await displayPlanetsData();
+        await displayFilmsData();
+        // await displayVehiclesData();
+
         // Print stats
-        if (isDebugMode) {
-            console.log("\nStats:");
-            console.log("API Calls:", fetchCount);
-            console.log("Cache Size:", Object.keys(cache).length);
-            console.log("Total Data Size:", totalSize, "bytes");
-            console.log("Error Count:", errCount);
-        }
-        
+        if (isDebugMode) displayStats();
     } catch (error) {
         console.error("Error:", error.message);
         errCount++;
     }
 }
+
+async function displayCharacterData() {
+    const character = await fetchData(`people/${lastId}`);
+    totalDataSize += JSON.stringify(character).length;
+    console.log("Character:", character.name);
+    console.log("Height:", character.height);
+    console.log("Mass:", character.mass);
+    console.log("Birthday:", character.birth_year);
+    if (character.films && character.films.length > 0) {
+        console.log("Appears in", character.films.length, "films");
+    }
+}
+
+async function displayStarshipsData() {
+    const starships = await fetchData("starships/?page=1");
+    const maxStarshipsToDisplay = 3;
+
+    totalDataSize += JSON.stringify(starships).length;
+    console.log("\nTotal Starships:", starships.count);
+
+    const starshipsToShow = starships.results.slice(0, maxStarshipsToDisplay);
+
+    starshipsToShow.forEach((starship, i) => {
+        console.log(`\nStarship ${i + 1}:`);
+        console.log("Name:", starship.name);
+        console.log("Model:", starship.model);
+        console.log("Manufacturer:", starship.manufacturer);
+
+        const cost = starship.cost_in_credits;
+        console.log("Cost:", cost !== "unknown" ? `${cost} credits` : "unknown");
+        console.log("Speed:", starship.max_atmosphering_speed);
+        console.log("Hyperdrive Rating:", starship.hyperdrive_rating);
+
+        const hasPilots = starship.pilots?.length > 0;
+        if (hasPilots) {
+            console.log("Pilots:", starship.pilots.length);
+        }
+    });
+}
+
+async function displayPlanetsData() {
+    // Find planets with population > 1000000000 and diameter > 10000
+    const planets = await fetchData("planets/?page=1");
+    totalDataSize += JSON.stringify(planets).length;
+
+    console.log("\nLarge populated planets:");
+
+    for (let i = 0; i < planets.results.length; i++) {
+        const planet = planets.results[i];
+        const minPopulation = 1000000000;
+        const minDiameter = 10000;
+
+        if (checkPlanetPopulationAndDiameter(planet, minPopulation, minDiameter)) {
+            console.log(planet.name, "- Pop:", planet.population, "- Diameter:", 
+                planet.diameter, "- Climate:", planet.climate);
+
+            // Check if it appears in any films
+            if (planet.films && planet.films.length > 0) {
+                console.log(`Appears in ${planet.films.length} films`);
+            }
+        }
+    }
+}
+
+function checkPlanetPopulationAndDiameter(planet, minPopulation, minDiameter) {
+    return (
+        planet.population !== "unknown" &&
+        parseInt(planet.population) > minPopulation &&
+        planet.diameter !== "unknown" &&
+        parseInt(planet.diameter) > minDiameter
+    );
+}
+
+async function displayFilmsData() {
+    // Get films and sort by release date, then print details
+    const films = await fetchData("films/");
+    totalDataSize += JSON.stringify(films).length;
+    const filmList = films.results;
+
+    filmList.sort((filmA, filmB) => {
+        return new Date(filmA.release_date) - new Date(filmB.release_date);
+    });
+
+    console.log("\nStar Wars Films in chronological order:");
+    for (let i = 0; i < filmList.length; i++) {
+        const film = filmList[i];
+        console.log(`${i + 1}. ${film.title} (${film.release_date})`);
+        console.log(`Director: ${film.director}`);
+        console.log(`Producer: ${film.producer}`);
+        console.log(`Characters: ${film.characters.length}`);
+        console.log(`Planets: ${film.planets.length}`);
+    }
+}
+
+function displayStats() {
+    console.log("\nStats:");
+    console.log("API Calls:", fetchCount);
+    console.log("Cache Size:", Object.keys(cache).length);
+    console.log("Total Data Size:", totalDataSize, "bytes");
+    console.log("Error Count:", errCount);
+}
+
+// async function displayVehiclesData() {
+// Get a vehicle and display details
+// TODO: Esperando retorno do professor, rota não funcionando.
+// if (lastId <= 4) {
+//     const vehicle = await fetchData(`vehicles/${lastId}`);
+//     totalSize += JSON.stringify(vehicle).length;
+//     console.log("\nFeatured Vehicle:");
+//     console.log("Name:", vehicle.name);
+//     console.log("Model:", vehicle.model);
+//     console.log("Manufacturer:", vehicle.manufacturer);
+//     console.log("Cost:", vehicle.cost_in_credits, "credits");
+//     console.log("Length:", vehicle.length);
+//     console.log("Crew Required:", vehicle.crew);
+//     console.log("Passengers:", vehicle.passengers);
+//     lastId++;  // Increment for next call
+// }
+// }
+
+
 
 // Process command line arguments
 // TODO: O que esse slice faz?? Como renomear melhor esse sliceAmount??
@@ -183,9 +245,9 @@ if (args.includes("--timeout")) {
 
 // Create a simple HTTP server to display the results
 const server = http.createServer((req, res) => {
-    if (req.url === "/" || req.url === "/index.html") {
-        res.writeHead(statusCodeOK, { "Content-Type": "text/html" });
-        res.end(`
+  if (req.url === "/" || req.url === "/index.html") {
+    res.writeHead(statusCodeOK, { "Content-Type": "text/html" });
+    res.end(`
             <!DOCTYPE html>
             <html>
                 <head>
@@ -221,40 +283,42 @@ const server = http.createServer((req, res) => {
                     </script>
                     <div class="footer">
                         <p>
-                            API calls: ${fetchCount} | 
-                            Cache entries: ${Object.keys(cache).length} | 
-                            Errors: ${errCount}
+                            API calls: ${fetchCount} | Cache entries: ${Object.keys(cache).length} | Errors: ${errCount}
                         </p>
-                        <pre>Debug mode: ${isDebugMode ? "ON" : "OFF"} | Timeout: ${timeout}ms</pre>
+                        <pre>Debug mode: ${ isDebugMode ? "ON" : "OFF" } | Timeout: ${timeout}ms</pre>
                     </div>
                 </body>
             </html>
         `);
-    } else if (req.url === "/api") {
-        p();
-        res.writeHead(statusCodeOK, { "Content-Type": "text/plain" });
-        res.end("Check server console for results");
-    } else if (req.url === "/stats") {
-        res.writeHead(statusCodeOK, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-            api_calls: fetchCount,
-            cache_size: Object.keys(cache).length,
-            data_size: totalSize,
-            errors: errCount,
-            debug: isDebugMode,
-            timeout: timeout
-        }));
-    } else {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Not Found");
-    }
+  } else if (req.url === "/api") {
+    displayData();
+    res.writeHead(statusCodeOK, { "Content-Type": "text/plain" });
+    res.end("Check server console for results");
+  } else if (req.url === "/stats") {
+    res.writeHead(statusCodeOK, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        api_calls: fetchCount,
+        cache_size: Object.keys(cache).length,
+        data_size: totalDataSize,
+        errors: errCount,
+        debug: isDebugMode,
+        timeout: timeout,
+      })
+    );
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found");
+  }
 });
 
 const DEFAULTPORT = 3000;
 const PORT = process.env.PORT || DEFAULTPORT;
 server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}/`);
-    console.log("Open the URL in your browser and click the button to fetch Star Wars data");
+    console.log(
+        "Open the URL in your browser and click the button to fetch Star Wars data"
+    );
     if (isDebugMode) {
         console.log("Debug mode: ON");
         console.log("Timeout:", timeout, "ms");
