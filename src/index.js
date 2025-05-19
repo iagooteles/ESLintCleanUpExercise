@@ -1,6 +1,7 @@
 // StarWars API Code
 // This code intentionally violates clean code principles for refactoring practice
 
+const process = require("process");
 const http = require("http");
 const https = require("https");
 
@@ -8,6 +9,7 @@ const cache = {};
 let isDebugMode = true;
 let errCount = 0;
 const statusCodeOK = 200;
+const notFoundStatusCode = 404;
 let timeout = 5000;
 
 async function fetchData(requestUrl) {
@@ -230,7 +232,6 @@ function displayStats() {
 
 
 // Process command line arguments
-// TODO: O que esse slice faz?? Como renomear melhor esse sliceAmount??
 const sliceAmount = 2;
 const args = process.argv.slice(sliceAmount);
 if (args.includes("--no-debug")) {
@@ -245,72 +246,91 @@ if (args.includes("--timeout")) {
 
 // Create a simple HTTP server to display the results
 const server = http.createServer((req, res) => {
-  if (req.url === "/" || req.url === "/index.html") {
-    res.writeHead(statusCodeOK, { "Content-Type": "text/html" });
-    res.end(`
-            <!DOCTYPE html>
-            <html>
-                <head>
-                    <title>Star Wars API Demo</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-                        h1 { color: #FFE81F; background-color: #000; padding: 10px; }
-                        button { background-color: #FFE81F; border: none; padding: 10px 20px; cursor: pointer; }
-                        .footer { margin-top: 50px; font-size: 12px; color: #666; }
-                        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Star Wars API Demo</h1>
-                    <p>This page demonstrates fetching data from the Star Wars API.</p>
-                    <p>Check your console for the API results.</p>
-                    <button onclick="fetchData()">Fetch Star Wars Data</button>
-                    <div id="results"></div>
-                    <script>
-                        function fetchData() {
-                            document.getElementById('results').innerHTML = '<p>Loading data...</p>';
-                            fetch('/api')
-                                .then(res => res.text())
-                                .then(text => {
-                                    alert('API request made! Check server console.');
-                                    document.getElementById('results')
-                                    .innerHTML = '<p>Data fetched! Check server console.</p>';
-                                })
-                                .catch(err => {
-                                    document.getElementById('results').innerHTML = '<p>Error: ' + err.message + '</p>';
-                                });
-                        }
-                    </script>
-                    <div class="footer">
-                        <p>
-                            API calls: ${fetchCount} | Cache entries: ${Object.keys(cache).length} | Errors: ${errCount}
-                        </p>
-                        <pre>Debug mode: ${ isDebugMode ? "ON" : "OFF" } | Timeout: ${timeout}ms</pre>
-                    </div>
-                </body>
-            </html>
-        `);
-  } else if (req.url === "/api") {
-    displayData();
-    res.writeHead(statusCodeOK, { "Content-Type": "text/plain" });
-    res.end("Check server console for results");
-  } else if (req.url === "/stats") {
-    res.writeHead(statusCodeOK, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        api_calls: fetchCount,
-        cache_size: Object.keys(cache).length,
-        data_size: totalDataSize,
-        errors: errCount,
-        debug: isDebugMode,
-        timeout: timeout,
-      })
-    );
-  } else {
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not Found");
-  }
+    if (req.url === "/" || req.url === "/index.html") {
+        res.writeHead(statusCodeOK, { "Content-Type": "text/html" });
+        const htmlPageParams = { fetchCount, cache, errCount, isDebugMode, timeout };
+        res.end(getHtmlPage(htmlPageParams));
+    } else if (req.url === "/api") {
+        displayData();
+        res.writeHead(statusCodeOK, { "Content-Type": "text/plain" });
+        res.end("Check server console for results");
+    } else if (req.url === "/stats") {
+        res.writeHead(statusCodeOK, { "Content-Type": "application/json" });
+        res.end(
+            JSON.stringify({
+                api_calls: fetchCount,
+                cache_size: Object.keys(cache).length,
+                data_size: totalDataSize,
+                errors: errCount,
+                debug: isDebugMode,
+                timeout: timeout,
+            })
+        );
+    } else {
+        res.writeHead(notFoundStatusCode, { "Content-Type": "text/plain" });
+        res.end("Not Found");
+    }
 });
+
+function getHtmlPageStyle() {
+    return `
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            h1 { color: #FFE81F; background-color: #000; padding: 10px; }
+            button { background-color: #FFE81F; border: none; padding: 10px 20px; cursor: pointer; }
+            .footer { margin-top: 50px; font-size: 12px; color: #666; }
+            pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+        </style>
+    `;
+}
+
+function getHtmlPageScript() {
+    return `
+        <script>
+            function fetchData() {
+                document.getElementById('results').innerHTML = '<p>Loading data...</p>';
+                fetch('/api')
+                    .then(res => res.text())
+                    .then(text => {
+                        alert('API request made! Check server console.');
+                        document.getElementById('results').innerHTML = '<p>Data fetched! Check server console.</p>';
+                    })
+                    .catch(err => {
+                        document.getElementById('results').innerHTML = '<p>Error: ' + err.message + '</p>';
+                    });
+            }
+        </script>
+    `;
+}
+
+function getHtmlPage(htmlPageParams) {
+    return `
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>Star Wars API Demo</title>
+                ${getHtmlPageStyle()}
+            </head>
+            <body>
+                <h1>Star Wars API Demo</h1>
+                <p>This page demonstrates fetching data from the Star Wars API.</p>
+                <p>Check your console for the API results.</p>
+                <button onclick="fetchData()">Fetch Star Wars Data</button>
+                <div id="results"></div>
+                ${getHtmlPageScript()}
+                <div class="footer">
+                    <p>
+                        API calls: ${htmlPageParams.fetchCount} | 
+                        Cache entries: ${Object.keys(htmlPageParams.cache).length} | 
+                        Errors: ${htmlPageParams.errCount}
+                    </p>
+                    <pre>${`Debug mode: ${htmlPageParams.isDebugMode ? "ON" : "OFF"} | ` +
+                        `Timeout: ${htmlPageParams.timeout}ms`}</pre>
+                </div>
+            </body>
+        </html>
+    `;
+}
 
 const DEFAULTPORT = 3000;
 const PORT = process.env.PORT || DEFAULTPORT;
