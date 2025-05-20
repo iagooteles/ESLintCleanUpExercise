@@ -7,10 +7,15 @@ const https = require("https");
 
 const cache = {};
 let isDebugMode = true;
-let errCount = 0;
+let errorCount = 0;
 const statusCodeOK = 200;
 const notFoundStatusCode = 404;
-let timeout = 5000;
+let requestTimeoutMs = 5000;
+
+// Global variables for tracking state
+const characterID = 1;
+let fetchCount = 0;
+let totalDataSize = 0;
 
 async function fetchData(requestUrl) {
     const cachedData = getDataFromCache(requestUrl);
@@ -29,28 +34,27 @@ function getDataFromCache(requestUrl) {
 
 function doHttpRequest(requestUrl) {
     return new Promise((resolve, reject) => {
-        let data = "";
-
         const req = https.get(`https://swapi.dev/api/${requestUrl}`, { rejectUnauthorized: false }, (res) => {
-            if (!handleFailedResponse(res.statusCode, reject)) {
-                return;
-            }
-            
-            res.on("data", (chunk) => {data += chunk;});
-
-            res.on("end", () => {
-                handleSuccessResponse(data, requestUrl, resolve, reject);
-            });
+            handleResponse(res, requestUrl, resolve, reject);
         });
 
         handleRequestErrors(req, requestUrl, reject);
     });
 }
 
+function handleResponse(res, requestUrl, resolve, reject) {
+    if (!handleFailedResponse(res.statusCode, reject)) return;
+
+    let data = "";
+    res.on("data", chunk => data += chunk);
+    res.on("end", () => handleSuccessResponse(data, requestUrl, resolve, reject));
+}
+
+
 function handleFailedResponse(statusCode, reject) {
     const BAD_STATUS_CODE = 400;
     if (statusCode >= BAD_STATUS_CODE) {
-        errCount++;
+        errorCount++;
         reject(new Error(`Request failed with status code ${statusCode}`));
         return false;
     }
@@ -60,36 +64,38 @@ function handleFailedResponse(statusCode, reject) {
 function handleSuccessResponse(data, requestUrl, resolve, reject) {
     try {
         const parsedData = JSON.parse(data);
-        cache[requestUrl] = parsedData;
+        saveToCache(requestUrl, parsedData);
         resolve(parsedData);
-
-        if (isDebugMode) {
-            console.log(`Successfully fetched data for ${requestUrl}`);
-            console.log(`Cache size: ${Object.keys(cache).length}`);
-        }
+        logDebugInfo(requestUrl);
     } catch (error) {
-        errCount++;
+        errorCount++;
         reject(error);
     }
 }
 
+function saveToCache(requestUrl, data) {
+    cache[requestUrl] = data;
+}
+
+
+function logDebugInfo(requestUrl) {
+    if (!isDebugMode) return;
+    console.log(`Successfully fetched data for ${requestUrl}`);
+    console.log(`Cache size: ${Object.keys(cache).length}`);
+}
+
 function handleRequestErrors(req, requestUrl, reject) {
     req.on("error", (error) => {
-        errCount++;
+        errorCount++;
         reject(error);
     });
 
-    req.setTimeout(timeout, () => {
+    req.setTimeout(requestTimeoutMs, () => {
         req.abort();
-        errCount++;
+        errorCount++;
         reject(new Error(`Request timeout for ${requestUrl}`));
     });
 }
-
-// Global variables for tracking state
-const lastId = 1;
-let fetchCount = 0;
-let totalDataSize = 0;
 
 async function displayData() {
     try {
@@ -106,12 +112,12 @@ async function displayData() {
         if (isDebugMode) displayStats();
     } catch (error) {
         console.error("Error:", error.message);
-        errCount++;
+        errorCount++;
     }
 }
 
 async function displayCharacterData() {
-    const character = await fetchData(`people/${lastId}`);
+    const character = await fetchData(`people/${characterID}`);
     totalDataSize += JSON.stringify(character).length;
     console.log("Character:", character.name);
     console.log("Height:", character.height);
@@ -208,14 +214,14 @@ function displayStats() {
     console.log("API Calls:", fetchCount);
     console.log("Cache Size:", Object.keys(cache).length);
     console.log("Total Data Size:", totalDataSize, "bytes");
-    console.log("Error Count:", errCount);
+    console.log("Error Count:", errorCount);
 }
 
 // async function displayVehiclesData() {
 // Get a vehicle and display details
 // TODO: Esperando retorno do professor, rota não funcionando.
-// if (lastId <= 4) {
-//     const vehicle = await fetchData(`vehicles/${lastId}`);
+// if (characterID <= 4) {
+//     const vehicle = await fetchData(`vehicles/${characterID}`);
 //     totalSize += JSON.stringify(vehicle).length;
 //     console.log("\nFeatured Vehicle:");
 //     console.log("Name:", vehicle.name);
@@ -225,7 +231,7 @@ function displayStats() {
 //     console.log("Length:", vehicle.length);
 //     console.log("Crew Required:", vehicle.crew);
 //     console.log("Passengers:", vehicle.passengers);
-//     lastId++;  // Increment for next call
+//     characterID++;  // Increment for next call
 // }
 // }
 
@@ -240,7 +246,7 @@ if (args.includes("--no-debug")) {
 if (args.includes("--timeout")) {
     const index = args.indexOf("--timeout");
     if (index < args.length - 1) {
-        timeout = parseInt(args[index + 1]);
+        requestTimeoutMs = parseInt(args[index + 1]);
     }
 }
 
@@ -248,8 +254,8 @@ if (args.includes("--timeout")) {
 const server = http.createServer((req, res) => {
     if (req.url === "/" || req.url === "/index.html") {
         res.writeHead(statusCodeOK, { "Content-Type": "text/html" });
-        const htmlPageParams = { fetchCount, cache, errCount, isDebugMode, timeout };
-        res.end(getHtmlPage(htmlPageParams));
+        const htmlPageParams = { fetchCount, cache, errCount: errorCount, isDebugMode, timeout: requestTimeoutMs };
+        res.end(renderHtmlPage(htmlPageParams));
     } else if (req.url === "/api") {
         displayData();
         res.writeHead(statusCodeOK, { "Content-Type": "text/plain" });
@@ -261,9 +267,9 @@ const server = http.createServer((req, res) => {
                 api_calls: fetchCount,
                 cache_size: Object.keys(cache).length,
                 data_size: totalDataSize,
-                errors: errCount,
+                errors: errorCount,
                 debug: isDebugMode,
-                timeout: timeout,
+                timeout: requestTimeoutMs,
             })
         );
     } else {
@@ -303,7 +309,7 @@ function getHtmlPageScript() {
     `;
 }
 
-function getHtmlPage(htmlPageParams) {
+function renderHtmlPage(htmlPageParams) {
     return `
         <!DOCTYPE html>
         <html>
@@ -341,6 +347,6 @@ server.listen(PORT, () => {
     );
     if (isDebugMode) {
         console.log("Debug mode: ON");
-        console.log("Timeout:", timeout, "ms");
+        console.log("Timeout:", requestTimeoutMs, "ms");
     }
 });
