@@ -4,6 +4,7 @@
 const process = require("process");
 const http = require("http");
 const https = require("https");
+const args = process.argv.slice(sliceAmount);
 
 const cache = {};
 let isDebugMode = true;
@@ -11,11 +12,14 @@ let errorCount = 0;
 const statusCodeOK = 200;
 const notFoundStatusCode = 404;
 let requestTimeoutMs = 5000;
+const DEFAULTPORT = 3000;
+const PORT = process.env.PORT || DEFAULTPORT;
 
 // Global variables for tracking state
 const characterID = 1;
 let fetchCount = 0;
 let totalDataSize = 0;
+const sliceAmount = 2;
 
 async function fetchData(requestUrl) {
     const cachedData = getDataFromCache(requestUrl);
@@ -50,7 +54,6 @@ function handleResponse(res, requestUrl, resolve, reject) {
     res.on("end", () => handleSuccessResponse(data, requestUrl, resolve, reject));
 }
 
-
 function handleFailedResponse(statusCode, reject) {
     const BAD_STATUS_CODE = 400;
     if (statusCode >= BAD_STATUS_CODE) {
@@ -76,7 +79,6 @@ function handleSuccessResponse(data, requestUrl, resolve, reject) {
 function saveToCache(requestUrl, data) {
     cache[requestUrl] = data;
 }
-
 
 function logDebugInfo(requestUrl) {
     if (!isDebugMode) return;
@@ -238,8 +240,6 @@ function displayStats() {
 
 
 // Process command line arguments
-const sliceAmount = 2;
-const args = process.argv.slice(sliceAmount);
 if (args.includes("--no-debug")) {
     isDebugMode = false;
 }
@@ -338,8 +338,6 @@ function renderHtmlPage(htmlPageParams) {
     `;
 }
 
-const DEFAULTPORT = 3000;
-const PORT = process.env.PORT || DEFAULTPORT;
 server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}/`);
     console.log(
