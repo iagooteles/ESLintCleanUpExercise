@@ -4,22 +4,22 @@
 const process = require("process");
 const http = require("http");
 const https = require("https");
-const args = process.argv.slice(sliceAmount);
 
 const cache = {};
 let isDebugMode = true;
 let errorCount = 0;
+let requestTimeoutMs = 5000;
 const statusCodeOK = 200;
 const notFoundStatusCode = 404;
-let requestTimeoutMs = 5000;
 const DEFAULTPORT = 3000;
 const PORT = process.env.PORT || DEFAULTPORT;
 
 // Global variables for tracking state
-const characterID = 1;
+let characterID = 1;
 let fetchCount = 0;
 let totalDataSize = 0;
 const sliceAmount = 2;
+const args = process.argv.slice(sliceAmount);
 
 async function fetchData(requestUrl) {
     const cachedData = getDataFromCache(requestUrl);
@@ -33,6 +33,7 @@ function getDataFromCache(requestUrl) {
         if (isDebugMode) console.log("Using cached data for", requestUrl);
         return cache[requestUrl];
     }
+
     return null;
 }
 
@@ -59,8 +60,10 @@ function handleFailedResponse(statusCode, reject) {
     if (statusCode >= BAD_STATUS_CODE) {
         errorCount++;
         reject(new Error(`Request failed with status code ${statusCode}`));
+
         return false;
     }
+
     return true;
 }
 
@@ -108,10 +111,11 @@ async function displayData() {
         await displayStarshipsData();
         await displayPlanetsData();
         await displayFilmsData();
-        // await displayVehiclesData();
+        await displayVehiclesData();
 
         // Print stats
         if (isDebugMode) displayStats();
+
     } catch (error) {
         console.error("Error:", error.message);
         errorCount++;
@@ -125,6 +129,7 @@ async function displayCharacterData() {
     console.log("Height:", character.height);
     console.log("Mass:", character.mass);
     console.log("Birthday:", character.birth_year);
+
     if (character.films && character.films.length > 0) {
         console.log("Appears in", character.films.length, "films");
     }
@@ -219,25 +224,25 @@ function displayStats() {
     console.log("Error Count:", errorCount);
 }
 
-// async function displayVehiclesData() {
+// OBS: Esperando retorno do professor, rota não funcionando.
 // Get a vehicle and display details
-// TODO: Esperando retorno do professor, rota não funcionando.
-// if (characterID <= 4) {
-//     const vehicle = await fetchData(`vehicles/${characterID}`);
-//     totalSize += JSON.stringify(vehicle).length;
-//     console.log("\nFeatured Vehicle:");
-//     console.log("Name:", vehicle.name);
-//     console.log("Model:", vehicle.model);
-//     console.log("Manufacturer:", vehicle.manufacturer);
-//     console.log("Cost:", vehicle.cost_in_credits, "credits");
-//     console.log("Length:", vehicle.length);
-//     console.log("Crew Required:", vehicle.crew);
-//     console.log("Passengers:", vehicle.passengers);
-//     characterID++;  // Increment for next call
-// }
-// }
+async function displayVehiclesData() {
+    const maxFetchedVehicles = 4;
 
-
+    if (characterID <= maxFetchedVehicles) {
+        const vehicle = await fetchData(`vehicles/${characterID}`);
+        totalDataSize += JSON.stringify(vehicle).length;
+        console.log("\nFeatured Vehicle:");
+        console.log("Name:", vehicle.name);
+        console.log("Model:", vehicle.model);
+        console.log("Manufacturer:", vehicle.manufacturer);
+        console.log("Cost:", vehicle.cost_in_credits, "credits");
+        console.log("Length:", vehicle.length);
+        console.log("Crew Required:", vehicle.crew);
+        console.log("Passengers:", vehicle.passengers);
+        characterID++;  // Increment for next call
+    }
+}
 
 // Process command line arguments
 if (args.includes("--no-debug")) {
@@ -340,9 +345,7 @@ function renderHtmlPage(htmlPageParams) {
 
 server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}/`);
-    console.log(
-        "Open the URL in your browser and click the button to fetch Star Wars data"
-    );
+    console.log("Open the URL in your browser and click the button to fetch Star Wars data");
     if (isDebugMode) {
         console.log("Debug mode: ON");
         console.log("Timeout:", requestTimeoutMs, "ms");
